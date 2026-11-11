@@ -1,7 +1,7 @@
 import { state, save, replace, fresh, touchAll } from './store.js';
 import * as S from './sync.js';
 import * as E from './engine.js';
-import { EX, PHASES, GOALS, LEVELS, EQUIP, LIFTS, MUSCLES, SPLIT_NAME } from './data.js';
+import { EX, PHASES, GOALS, LEVELS, EQUIP, LIFTS, MUSCLES, SPLIT_NAME, VOL_MUSCLES, LOAD_TYPES, setCustom } from './data.js';
 
 const app = document.getElementById('app');
 let view = 'home';
@@ -17,7 +17,9 @@ const dateDE = d => new Date(d).toLocaleDateString('de-DE', { day: '2-digit', mo
 const PATTERN = { squat: 'Kniebeuge-Muster · Beine', quad: 'Quadrizeps · Beine', hinge: 'Hüftstreckung · Gesäß & Beinrückseite', ham: 'Beinbeuger', hpush: 'Drücken horizontal · Brust', ipush: 'Drücken schräg · obere Brust', vpush: 'Drücken über Kopf · Schultern', fly: 'Brust-Isolation', delt: 'Seitliche Schulter', rear: 'Hintere Schulter', hpull: 'Rudern · Rücken', vpull: 'Ziehen vertikal · Lat', biceps: 'Bizeps', triceps: 'Trizeps', calves: 'Waden', core: 'Rumpf' };
 const ROLE = { main: 'Grundübung', acc: 'Assistenz', iso: 'Isolation' };
 const REST = { main: '2–3 min Pause', acc: '2 min Pause', iso: '60–90 s Pause' };
-const loadTxt = x => (x.ex.noload ? 'ohne Zusatzlast' : x.ex.bw ? (x.target > 0 ? `Körpergewicht + ${num(x.target)} kg` : 'Körpergewicht') : `${num(x.target)} kg${x.ex.per ? ' ' + x.ex.per : ''}`);
+const restSec = x => (x.group?.endsWith('1') ? 20 : x.role === 'main' ? (state.profile.goal === 'kraft' ? 180 : 150) : x.role === 'acc' ? 120 : 75);
+const loadTxt = x => (x.ex.noload ? 'ohne Zusatzlast' : x.ex.bw ? (x.target > 0 ? `Körpergewicht + ${num(x.target)} kg` : 'Körpergewicht') : x.target == null ? 'Startgewicht wählen' : `${num(x.target)} kg${x.ex.per ? ' ' + x.ex.per : ''}`);
+const groupTag = x => (x.group ? `<i class="ss" title="Supersatz">${x.group}</i>` : '');
 const icon = d => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
 const NAV = [
   ['home', 'Heute', 'M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'],
@@ -130,7 +132,7 @@ function vHome() {
   <div class="grid2">
     <section class="card next">${next ? `
       <div class="tag">${p.name ? `Hi ${esc(p.name)} – ` : ''}nächste Einheit</div><h2>${next.name}</h2>
-      <ul class="mini">${next.exercises.map(x => `<li><span>${x.ex.name}</span><span>${x.sets} × ${x.reps[0]}–${x.reps[1]}</span></li>`).join('')}</ul>
+      <p class="muted small">ca. ${next.minutes} min</p><ul class="mini">${next.exercises.map(x => `<li><span>${groupTag(x)}${x.ex.name}</span><span>${x.sets} × ${x.reps[0]}–${x.reps[1]}</span></li>`).join('')}</ul>
       <button class="btn primary block" data-act="openLog" data-key="${next.key}">${state.logs[next.key] ? 'Training fortsetzen' : 'Training starten'}</button>` : `
       <div class="tag">Woche geschafft</div><h2>Alle ${plan.days.length} Einheiten erledigt</h2><p class="sub">Schließe die Woche ab, damit der Plan für die nächste berechnet wird.</p>
       <button class="btn primary block" data-act="modalClose">Woche abschließen</button>`}
@@ -154,12 +156,23 @@ function vPlan() {
   <div class="tabs" role="tablist">${PHASES[state.profile.goal].map((ph, i) => `<button role="tab" aria-selected="${i === meso}" class="${i === meso ? 'on' : ''}" data-act="goWeek" data-meso="${i}" data-week="${i === pr.meso ? pr.week : 0}"><small>Mesozyklus ${i + 1}</small>${ph.name}</button>`).join('')}</div>
   <div class="weeks">${Array.from({ length: len }, (_, w) => `<button class="${w === week ? 'on' : ''} ${w === len - 1 ? 'dl' : ''}" data-act="goWeek" data-meso="${meso}" data-week="${w}">${w === len - 1 ? 'Deload' : `Woche ${w + 1}`}${meso === pr.meso && w === pr.week ? '<i></i>' : ''}</button>`).join('')}</div>
   <p class="note">${plan.meta.deload ? 'Deload: halbes Volumen, weit weg vom Muskelversagen.' : `${plan.phase.desc}.`} ${future ? 'Lasten sind eine Prognose und werden jede Woche aus deinen Einträgen neu berechnet.' : cur ? 'Aktuelle Woche.' : 'Vergangene Woche.'}</p>
+  ${volumeCard(plan)}
   ${plan.days.map(d => { const l = state.logs[d.key]; return `
-  <section class="card day"><div class="cardhead"><h3>${d.name}</h3>${future ? '' : `<button class="btn ${cur && !l?.done ? 'primary' : 'ghost'} sm" data-act="openLog" data-key="${d.key}">${l?.done ? 'Einträge ansehen' : l ? 'Fortsetzen' : 'Starten'}</button>`}</div>
+  <section class="card day"><div class="cardhead"><h3>${d.name} <span class="muted">ca. ${d.minutes} min</span></h3>${future ? '' : `<button class="btn ${cur && !l?.done ? 'primary' : 'ghost'} sm" data-act="openLog" data-key="${d.key}">${l?.done ? 'Einträge ansehen' : l ? 'Fortsetzen' : 'Starten'}</button>`}</div>
     <div class="xhead"><span>Übung</span><span>Sätze × Wdh</span><span>${state.settings.unit === 'rpe' ? 'RPE' : 'RIR'}</span><span>Ziellast</span><span></span></div>
-    ${d.exercises.map(x => `<div class="xrow"><div class="xname">${x.ex.name}<small>${ROLE[x.role]}</small></div><span class="xsets">${x.sets} × ${x.reps[0]}–${x.reps[1]}</span><span><i class="pill ${plan.meta.deload ? 'dl' : ''}">${eff(x.rir)}</i></span><span class="xload">${loadTxt(x)}</span>
+    ${d.exercises.map(x => `<div class="xrow"><div class="xname">${groupTag(x)}${x.ex.name}<small>${ROLE[x.role]}${x.group ? ' · Supersatz' : ''}${x.warm.length ? ` · ${x.warm.length} Aufwärmsätze` : ''}</small></div><span class="xsets">${x.sets} × ${x.reps[0]}–${x.reps[1]}</span><span><i class="pill ${plan.meta.deload ? 'dl' : ''}">${eff(x.rir)}</i></span><span class="xload">${loadTxt(x)}</span>
       <span>${x.swappable ? `<button class="iconbtn" data-act="swap" data-slot="${x.slot}" data-cur="${x.ex.id}" title="Übung tauschen" aria-label="${x.ex.name} tauschen">⇄</button>` : ''}</span></div>`).join('')}
   </section>`; }).join('')}`;
+}
+
+function volumeCard(plan) {
+  const rows = Object.entries(plan.volume).filter(([k]) => k !== 'rumpf');
+  const max = Math.max(...rows.map(([, v]) => Math.max(v.hi, v.peak, v.sets))) * 1.08;
+  const low = rows.filter(([, v]) => v.peak < v.lo - 0.01).map(([k]) => VOL_MUSCLES[k]);
+  const ramp = !plan.meta.deload && rows.some(([, v]) => v.peak > v.sets + 0.01);
+  return `<details class="card vol" ${ui.volOpen ? 'open' : ''} data-toggle="vol"><summary><h3>Volumen pro Muskel <span class="muted">Sätze pro Woche</span></h3><span class="muted small">${low.length ? `${low.length} unter Zielbereich` : 'alle im Zielbereich'}</span></summary>
+    <div class="volgrid">${rows.map(([k, v]) => { const st = v.peak < v.lo - 0.01 ? 'low' : v.peak > v.hi + 0.01 ? 'high' : 'ok'; return `<div class="volrow ${st}"><span>${VOL_MUSCLES[k]}${v.focus ? ' ★' : ''}</span><div class="voltrack"><i class="range" style="left:${v.lo / max * 100}%;width:${(v.hi - v.lo) / max * 100}%"></i>${ramp ? `<i class="peak" style="width:${v.peak / max * 100}%"></i>` : ''}<i class="bar" style="width:${v.sets / max * 100}%"></i></div><b>${num(v.sets)}${ramp && v.peak > v.sets ? `<small> → ${num(v.peak)}</small>` : ''}</b></div>`; }).join('')}</div>
+    <p class="muted small">${plan.meta.deload ? 'Deload: bewusst nur etwa die Hälfte des Volumens. ' : ramp ? 'Der kräftige Balken zeigt diese Woche, der helle die Spitzenwoche des Mesozyklus – die Sätze steigen Woche für Woche. ' : ''}Grau hinterlegt ist der Zielbereich für dein Ziel und deine Erfahrung. Direkt trainierte Sätze zählen voll, mitbeanspruchte halb (z. B. Trizeps beim Bankdrücken).${low.length ? ` Unter dem Zielbereich: ${low.join(', ')}. Mehr passt in ${state.profile.minutes} Minuten nicht – mit mehr Zeit pro Einheit oder einem zusätzlichen Trainingstag steigt das Volumen.` : ''}</p></details>`;
 }
 
 // ---------- Training loggen ----------
@@ -179,7 +192,8 @@ function vLog() {
   ${day.exercises.map(x => {
     const sets = log?.ex?.[x.ex.id] || [], rows = Math.max(x.sets, sets.length);
     const prev = E.history(state, x.ex.id).filter(h => h.key !== day.key).pop();
-    return `<section class="card ex"><div class="cardhead"><div><h3>${x.ex.name}</h3><p class="muted">${x.sets} × ${x.reps[0]}–${x.reps[1]} · ${eff(x.rir)} · ${REST[x.role]}</p></div><div class="target"><small>Ziel</small><b>${loadTxt(x)}</b></div></div>
+    return `<section class="card ex ${x.group ? 'insuper' : ''}"><div class="cardhead"><div><h3>${groupTag(x)}${x.ex.name}</h3><p class="muted">${x.sets} × ${x.reps[0]}–${x.reps[1]} · ${eff(x.rir)} · ${x.group ? (x.group.endsWith('1') ? 'Supersatz – direkt weiter zur Partnerübung' : 'Supersatz – danach 60–90 s Pause') : REST[x.role]}</p></div><div class="target"><small>Ziel</small><b>${loadTxt(x)}</b></div></div>
+      ${x.warm.length ? `<div class="warm"><span>Aufwärmen</span>${x.warm.map(w => `<b>${num(w.w)} kg × ${w.r}</b>`).join('')}</div>` : ''}
       ${prev ? `<p class="prev">Letztes Mal (${dateDE(prev.date)}): ${prev.sets.map(s => x.ex.noload ? s.r : `${num(s.w ?? 0)}×${s.r}`).join(' · ')}</p>` : ''}
       <div class="sets"><div class="sethead"><span>Satz</span><span>${x.ex.noload ? '' : 'kg'}</span><span>Wdh</span><span>${rpe ? 'RPE' : 'RIR'}</span><span></span></div>
       ${Array.from({ length: rows }, (_, i) => { const s = sets[i] || {}; const ok = s.r > 0; return `<div class="setrow ${ok ? 'ok' : ''}"><span class="n">${i + 1}</span>
@@ -189,11 +203,89 @@ function vLog() {
         <button class="check" data-act="fill" data-ex="${x.ex.id}" data-i="${i}" aria-label="Satz ${i + 1} wie geplant">✓</button></div>`; }).join('')}
       </div><div class="exfoot"><button class="link" data-act="addSet" data-ex="${x.ex.id}" data-n="${rows}">+ Satz</button>${x.swappable ? `<button class="link muted" data-act="swap" data-slot="${x.slot}" data-cur="${x.ex.id}">⇄ Übung tauschen</button>` : ''}</div></section>`;
   }).join('')}
-  <div class="sticky"><button class="btn primary block" data-act="finish">${log?.done ? 'Änderungen gespeichert – zurück' : 'Einheit abschließen'}</button></div>`;
+  <div class="sticky">${timerBar()}<button class="btn primary block" data-act="finish">${log?.done ? 'Änderungen gespeichert – zurück' : 'Einheit abschließen'}</button></div>`;
 }
 
 function ensureLog(f) {
   return (state.logs[f.day.key] ||= { date: new Date().toISOString(), deload: f.plan.meta.deload, done: false, ex: {} });
+}
+
+// ---------- Pausen-Timer ----------
+let audio = null, tickHandle = null;
+function unlockAudio() {
+  try { audio ||= new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') audio.resume(); } catch { /* kein Ton verfügbar */ }
+}
+function beep() {
+  if (!audio) return;
+  [0, 0.25, 0.5].forEach(t => {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = 880; o.connect(g); g.connect(audio.destination);
+    const at = audio.currentTime + t;
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.25, at + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.18);
+    o.start(at); o.stop(at + 0.2);
+  });
+}
+function startTimer(x) {
+  const day = findDay(ui.logKey)?.day, i = day?.exercises.indexOf(x) ?? -1, partner = x.group?.endsWith('1') ? day.exercises[i + 1] : null;
+  const sec = restSec(x);
+  ui.timer = { end: Date.now() + sec * 1000, total: sec, label: partner ? `Weiter mit ${partner.ex.name}` : 'Pause', done: false };
+  runTicker();
+}
+const mmss = t => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+function timerBar() {
+  const t = ui.timer;
+  if (!t) return '';
+  const left = Math.max(0, Math.ceil((t.end - Date.now()) / 1000));
+  return `<div class="timer ${left ? '' : 'over'}" role="timer" aria-live="off"><i style="width:${left / t.total * 100}%"></i>
+    <span class="tl">${left ? esc(t.label) : 'Pause vorbei – nächster Satz'}</span><b class="tt">${mmss(left)}</b>
+    <button class="tb" data-act="timerAdd">+30 s</button><button class="tb" data-act="timerSkip" aria-label="Timer beenden">✕</button></div>`;
+}
+function runTicker() {
+  clearInterval(tickHandle);
+  tickHandle = setInterval(() => {
+    const t = ui.timer, el = document.querySelector('.timer');
+    if (!t || view !== 'log') { clearInterval(tickHandle); return; }
+    const left = Math.max(0, Math.ceil((t.end - Date.now()) / 1000));
+    if (!left && !t.done) { t.done = true; beep(); navigator.vibrate?.([200, 100, 200]); t.hideAt = Date.now() + 15000; }
+    if (t.done && Date.now() > t.hideAt) { ui.timer = null; el?.remove(); clearInterval(tickHandle); return; }
+    if (!el) return;
+    el.classList.toggle('over', !left);
+    el.querySelector('i').style.width = `${left / t.total * 100}%`;
+    el.querySelector('.tt').textContent = mmss(left);
+    el.querySelector('.tl').textContent = left ? t.label : 'Pause vorbei – nächster Satz';
+  }, 250);
+}
+
+// Bildschirm während des Trainings anlassen
+let wakeLock = null;
+async function manageWakeLock() {
+  try {
+    if (view === 'log' && document.visibilityState === 'visible' && !wakeLock && navigator.wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (view !== 'log' && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch { wakeLock = null; }
+}
+document.addEventListener('visibilitychange', manageWakeLock);
+
+// ---------- Eigene Übungen ----------
+function customCard() {
+  const list = state.custom || [];
+  return `<section class="card"><div class="cardhead"><h3>Eigene Übungen</h3><button class="btn ghost sm" data-act="customNew">+ Neue Übung</button></div>
+    ${list.length ? `<ul class="loglist">${list.map(c => `<li><span class="muted small">${esc(PATTERN[c.pat].split(' · ')[0])}</span><span><b>${esc(c.name)}</b><br><span class="muted small">${LOAD_TYPES[c.load]}</span></span><button class="iconbtn" data-act="customDel" data-id="${c.id}" aria-label="${esc(c.name)} löschen">×</button></li>`).join('')}</ul>`
+      : '<p class="muted small">Fehlt dir eine Übung? Lege sie hier an. Du ordnest sie einem Bewegungsmuster zu – dann taucht sie beim Tauschen genau dort als Alternative auf.</p>'}</section>`;
+}
+
+function customModal() {
+  const c = ui.custom;
+  return `<div class="overlay" data-act="modalHide"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt">
+    <div>${c.fixed ? `<div class="tag">${PATTERN[c.pat]}</div>` : ''}<h2 id="mt">Eigene Übung</h2></div>
+    <label class="field"><span>Name</span><div class="inp"><input type="text" id="cx-name" maxlength="60" autocomplete="off" placeholder="z. B. Maschinen-Rudern einarmig" value="${esc(c.name)}"></div></label>
+    ${c.fixed ? '' : `<label class="field"><span>Bewegungsmuster</span><select id="cx-pat" class="block">${Object.entries(PATTERN).map(([k, l]) => `<option value="${k}" ${k === c.pat ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`}
+    <div class="q"><span>Belastung</span><div class="chips">${Object.entries(LOAD_TYPES).map(([k, l]) => `<button type="button" class="chip ${c.load === k ? 'on' : ''}" data-act="customLoad" data-load="${k}">${l}</button>`).join('')}</div></div>
+    ${ui.customErr ? `<p class="err" role="alert">${esc(ui.customErr)}</p>` : ''}
+    <p class="muted small">Startgewicht wählst du beim ersten Training selbst, danach rechnet die App die Ziellast wie bei allen anderen Übungen.${c.slot ? ' Die Übung ersetzt direkt die aktuelle im Plan.' : ''}</p>
+    <div class="actions end"><button class="btn ghost" data-act="modalHide" data-force="1">Abbrechen</button><button class="btn primary" data-act="customSave">Speichern</button></div></div></div>`;
 }
 
 // ---------- Diagramme ----------
@@ -284,6 +376,7 @@ function vProfile() {
   <section class="card"><div class="cardhead"><h3>Anstrengung anzeigen als</h3></div>
     <div class="seg"><button class="${state.settings.unit === 'rir' ? 'on' : ''}" data-act="unit" data-unit="rir">RIR <small>Wiederholungen in Reserve</small></button><button class="${state.settings.unit === 'rpe' ? 'on' : ''}" data-act="unit" data-unit="rpe">RPE <small>Skala 1–10</small></button></div>
     <p class="muted small">RIR 2 entspricht RPE 8: Du hättest noch zwei saubere Wiederholungen geschafft.</p></section>
+  ${customCard()}
   ${syncCard()}
   <section class="card"><div class="cardhead"><h3>Daten</h3></div>
     <p class="muted small">${S.connected() ? 'Deine Daten liegen auf diesem Gerät und als Kopie in deinem GitHub-Konto.' : 'Alles liegt nur auf diesem Gerät.'} Mit dem Export sicherst du zusätzlich eine Datei, z. B. in iCloud Drive.</p>
@@ -344,9 +437,10 @@ function modal() {
     const { pat, list } = E.alternatives(state, ui.swapSlot), inj = state.profile.injuries || [];
     return `<div class="overlay" data-act="modalHide"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><div><div class="tag">${PATTERN[pat]}</div><h2 id="mt">Übung tauschen</h2></div>
       <p class="sub">Zur Auswahl stehen nur Übungen mit demselben Bewegungsmuster – der Trainingstag behält seinen Fokus. Der Tausch gilt für alle kommenden Wochen.</p>
-      <div class="altlist">${list.map(a => { const risky = (a.avoid || []).some(v => inj.includes(v)); return `<button class="chip ${a.id === ui.swapCur ? 'on' : ''}" data-act="swapPick" data-id="${a.id}"><b>${a.name}</b><small>${a.id === ui.swapCur ? 'aktuell im Plan' : risky ? 'belastet eine angegebene Beschwerde-Region' : E.history(state, a.id).length ? 'bereits trainiert – Lasten bekannt' : a.noload ? 'ohne Zusatzlast' : 'Startlast wird geschätzt'}</small></button>`; }).join('')}</div>
-      <div class="actions end"><button class="btn ghost" data-act="modalHide" data-force="1">Abbrechen</button></div></div></div>`;
+      <div class="altlist">${list.map(a => { const risky = (a.avoid || []).some(v => inj.includes(v)); return `<button class="chip ${a.id === ui.swapCur ? 'on' : ''}" data-act="swapPick" data-id="${a.id}"><b>${a.name}</b><small>${a.id === ui.swapCur ? 'aktuell im Plan' : risky ? 'belastet eine angegebene Beschwerde-Region' : E.history(state, a.id).length ? 'bereits trainiert – Lasten bekannt' : a.custom ? 'eigene Übung' : a.noload ? 'ohne Zusatzlast' : 'Startlast wird geschätzt'}</small></button>`; }).join('')}</div>
+      <div class="actions end"><button class="btn ghost" data-act="customNew" data-pat="${pat}" data-slot="${ui.swapSlot}">+ Eigene Übung</button><button class="btn ghost" data-act="modalHide" data-force="1">Abbrechen</button></div></div></div>`;
   }
+  if (ui.modal === 'custom') return customModal();
   if (ui.modal === 'reset') {
     return `<div class="overlay" data-act="modalHide"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">Alles zurücksetzen?</h2>
       <p class="sub">Profil, Plan und alle Trainings- und Gewichtseinträge werden von diesem Gerät gelöscht. Das lässt sich nicht rückgängig machen – exportiere vorher ein Backup, wenn du die Daten behalten willst.${S.connected() ? ' Die Synchronisierung wird auf diesem Gerät getrennt; die Kopie in deinem GitHub-Konto bleibt erhalten.' : ''}</p>
@@ -359,6 +453,7 @@ function modal() {
 const VIEWS = { home: vHome, plan: vPlan, log: vLog, progress: vProgress, food: vFood, profile: vProfile };
 
 function render() {
+  setCustom(state.custom);
   if (!state.profile || ui.ob) {
     ui.ob ||= structuredClone(OB_DEFAULT);
     app.innerHTML = vOnboarding() + modal() + (ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : '');
@@ -371,7 +466,7 @@ function render() {
     <main class="main">${VIEWS[view]()}</main></div>${modal()}${ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : ''}`;
 }
 
-function go(v) { view = v; render(); window.scrollTo(0, 0); }
+function go(v) { view = v; render(); window.scrollTo(0, 0); manageWakeLock(); if (v === 'log' && ui.timer) runTicker(); }
 
 // ---------- Aktionen ----------
 const actions = {
@@ -415,14 +510,17 @@ const actions = {
   sugDismiss: d => { state.program.handled.push(d.id); save(); render(); },
 
   fill: d => {
+    unlockAudio();
     const f = findDay(ui.logKey), x = f.day.exercises.find(e => e.ex.id === d.ex), log = ensureLog(f);
     const arr = (log.ex[d.ex] ||= []), s = (arr[d.i] ||= { p: x.rir });
     if (s.r > 0 && d.i == arr.length - 1 && s.auto) { arr[d.i] = null; } else {
       const prevSet = arr.slice(0, d.i).reverse().find(q => q && q.r > 0);
+      if (!x.ex.noload && s.w == null && prevSet?.w == null && x.target == null) { arr[d.i] = s.r || s.w != null ? s : null; toast('Trag zuerst das Gewicht ein – danach füllt ✓ die übrigen Sätze.'); return; }
       if (!x.ex.noload) s.w ??= prevSet?.w ?? x.target ?? 0;
       s.r ??= prevSet?.r ?? Math.round((x.reps[0] + x.reps[1]) / 2);
       s.rir ??= x.rir;
       s.auto = true;
+      startTimer(x);
     }
     save(); render();
   },
@@ -478,6 +576,38 @@ const actions = {
   syncNow: () => S.syncNow(),
   syncOff: () => { S.disconnect(); toast('Synchronisierung getrennt. Deine Daten bleiben auf diesem Gerät.'); },
 
+  timerAdd: () => { if (ui.timer) { const t = ui.timer, base = Math.max(Date.now(), t.end); t.end = base + 30000; t.total = Math.max(t.total, Math.ceil((t.end - Date.now()) / 1000)); t.done = false; render(); runTicker(); } },
+  timerSkip: () => { ui.timer = null; render(); },
+
+  customNew: d => {
+    ui.custom = { name: '', pat: d.pat || 'hpush', load: 'kg', fixed: !!d.pat, slot: d.slot || null };
+    ui.customErr = ''; ui.modal = 'custom'; render();
+    setTimeout(() => document.getElementById('cx-name')?.focus(), 50);
+  },
+  customLoad: d => { const c = ui.custom; c.name = document.getElementById('cx-name').value; if (!c.fixed) c.pat = document.getElementById('cx-pat').value; c.load = d.load; render(); },
+  customSave: () => {
+    const c = ui.custom, name = document.getElementById('cx-name').value.trim();
+    if (!c.fixed) c.pat = document.getElementById('cx-pat').value;
+    if (name.length < 2) { ui.customErr = 'Bitte gib der Übung einen Namen.'; c.name = name; return render(); }
+    if (Object.values(EX).some(x => x.name.toLowerCase() === name.toLowerCase())) { ui.customErr = 'Eine Übung mit diesem Namen gibt es schon.'; c.name = name; return render(); }
+    const id = 'c' + Date.now().toString(36);
+    state.custom = [...(state.custom || []), { id, name, pat: c.pat, load: c.load }];
+    setCustom(state.custom);
+    if (c.slot) {
+      state.program.swaps[c.slot] = id;
+      state.changes.push({ date: E.today(), title: `${EX[ui.swapCur]?.name || 'Übung'} getauscht`, label: `Neu im Plan: ${name} (eigene Übung)` });
+    }
+    ui.modal = null; ui.custom = null; save();
+    toast(c.slot ? `${name} ist jetzt im Plan.` : `${name} angelegt – du findest sie beim Tauschen.`);
+  },
+  customDel: d => {
+    const c = state.custom.find(x => x.id === d.id);
+    if (!c || !confirm(`„${c.name}“ löschen? Bereits eingetragene Sätze bleiben gespeichert, die Übung verschwindet aber aus Plan und Auswahl.`)) return;
+    state.custom = state.custom.filter(x => x.id !== d.id);
+    for (const [k, v] of Object.entries(state.program.swaps)) if (v === d.id) delete state.program.swaps[k];
+    save(); render();
+  },
+
   export: () => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
@@ -510,9 +640,9 @@ document.addEventListener('input', ev => {
     else s[f] = v;
     if (f === 'r' && v > 0 && s.w == null && !x.ex.noload) {
       // Gewicht leer gelassen: Vorsatz bzw. Ziellast übernehmen, damit der Satz zählt.
-      s.w = arr.slice(0, i).reverse().find(q => q && q.w != null)?.w ?? x.target ?? 0;
+      s.w = arr.slice(0, i).reverse().find(q => q && q.w != null)?.w ?? x.target ?? undefined;
       const wEl = el.closest('.setrow').querySelector('[data-log$="|w"]');
-      if (wEl) wEl.value = s.w;
+      if (wEl && s.w != null) wEl.value = s.w;
     }
     delete s.auto;
     el.closest('.setrow').classList.toggle('ok', s.r > 0);
@@ -523,6 +653,10 @@ document.addEventListener('input', ev => {
 document.addEventListener('change', ev => {
   const el = ev.target;
   if (el.dataset.change === 'chartEx') { ui.chartEx = el.value; render(); }
+  if (el.dataset.log?.endsWith('|r') && parse(el.value) > 0) {
+    const id = el.dataset.log.split('|')[0], x = findDay(ui.logKey)?.day.exercises.find(e => e.ex.id === id);
+    if (x) { unlockAudio(); startTimer(x); }
+  }
   if (el.dataset.change === 'import' && el.files[0]) {
     el.files[0].text().then(t => {
       const data = JSON.parse(t);
@@ -531,6 +665,8 @@ document.addEventListener('change', ev => {
     }).catch(() => toast('Die Datei ist kein gültiges Formkurve-Backup.'));
   }
 });
+
+document.addEventListener('toggle', ev => { if (ev.target.dataset?.toggle === 'vol') ui.volOpen = ev.target.open; }, true);
 
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && ui.modal) { ui.modal = null; render(); } });
 

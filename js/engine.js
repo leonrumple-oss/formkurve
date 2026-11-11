@@ -1,5 +1,5 @@
 // Regelbasierte Planlogik: Periodisierung, Lastvorgaben, Ernährung, Plateau-Erkennung.
-import { EX, BY_PAT, PATTERN_MUSCLE, TEMPLATES, SPLITS, PHASES, EST } from './data.js';
+import { EX, BY_PAT, TEMPLATES, SPLITS, PHASES, EST, VOL_MUSCLES, work, setCustom } from './data.js';
 
 export const MESOS = 3;
 export const round = (x, step) => Math.round(x / step) * step;
@@ -26,7 +26,9 @@ export function refs(p) {
 
 // Verlauf einer Übung: bester Satz (geschätztes 1RM) je Einheit, chronologisch.
 export function history(st, exId) {
-  const ex = EX[exId], bw = ex.bw ? bodyweight(st) : 0, out = [];
+  const ex = EX[exId];
+  if (!ex) return [];
+  const bw = ex.bw ? bodyweight(st) : 0, out = [];
   for (const [key, l] of Object.entries(st.logs)) {
     const sets = (l.ex?.[exId] || []).filter(s => s && s.r > 0 && (ex.noload || ex.bw || s.w > 0));
     if (!sets.length) continue;
@@ -46,14 +48,15 @@ function targetLoad(st, ex, reps, rir, R) {
   const mid = Math.round((reps[0] + reps[1]) / 2), div = 1 + (mid + rir) / 30;
   const known = h.length ? Math.max(...h.map(x => x.e1rm)) : null;
   if (ex.bw) return known ? Math.max(0, round(known / div - bodyweight(st), 2.5)) : 0;
-  const orm = known ?? R[ex.ref] * ex.ratio * 0.95;
+  const orm = known ?? (ex.ref ? R[ex.ref] * ex.ratio * 0.95 : null);
+  if (orm == null) return null; // eigene Übung ohne Einträge: Startgewicht wählt der Nutzer
   return Math.max(ex.step, round(orm / div, ex.step));
 }
 
 // ---------- Periodisierung ----------
 const BASE_LEN = { beg: 6, mid: 5, adv: 5 };
-const BASE_SETS = { beg: { main: 3, acc: 2, iso: 2 }, mid: { main: 3, acc: 3, iso: 2 }, adv: { main: 4, acc: 3, iso: 3 } };
-const MAX_EX = { 45: 4, 60: 5, 75: 6, 90: 7 };
+const MAIN_SETS = { beg: 3, mid: 3, adv: 3 };
+const MAX_SETS = { main: 5, acc: 4, iso: 4 };
 
 export function mesoWeeks(st, meso) {
   const len = BASE_LEN[st.profile.level];
@@ -86,45 +89,160 @@ export function alternatives(st, slot) {
 function resolve(p, pr, pat, v, role, slot, used) {
   const c = candidates(p, pat), sw = pr.swaps[slot];
   if (typeof sw === 'string' && EX[sw] && !used.has(sw)) return EX[sw];
+  const builtin = c.filter(x => !x.custom), list = builtin.length ? builtin : c;
   const i = v + (role === 'main' ? 0 : pr.macro) + (typeof sw === 'number' ? sw : 0);
-  for (let n = 0; n < c.length; n++) {
-    const x = c[(i + n) % c.length];
+  for (let n = 0; n < list.length; n++) {
+    const x = list[(i + n) % list.length];
     if (!used.has(x.id)) return x;
   }
-  return c[i % c.length];
+  return list[i % list.length];
 }
 
-function setsFor(p, pr, role, week, deload, muscle) {
-  const base = BASE_SETS[p.level][role];
-  if (deload) return Math.max(1, Math.ceil(base / 2));
-  let s = base;
-  if (role !== 'iso' && p.goal !== 'abbau' && !lowRecovery(p)) s += Math.min(p.level === 'beg' ? 1 : 2, Math.floor(week / 2));
-  if ((p.focus || []).includes(muscle)) s += 1;
-  if (role !== 'iso') s += pr.mods.volume || 0;
-  return Math.min(6, Math.max(1, s));
+// ---------- Volumen pro Muskel ----------
+// Zielbereiche in Sätzen pro Muskel und Woche (fraktional gezählt). Orientierung:
+// ~10–20 harte Sätze für Hypertrophie, mit abnehmendem Zusatznutzen (Schoenfeld 2017, Pelland 2024).
+// Bei fraktionaler Zählung liegen die Werte etwas niedriger als bei reinen direkten Sätzen.
+const VOL = { beg: [6, 10], mid: [8, 14], adv: [10, 18] };
+const GOAL_VOL = { aufbau: 1, fit: 0.85, kraft: 0.8, abbau: 0.75 };
+const MUSCLE_FACTOR = { sch_vorn: 0.5, waden: 0.7 };
+const MUSCLE_WEIGHT = { rumpf: 0.5, waden: 0.8, sch_vorn: 0.6 };
+const FOCUS_MAP = { brust: ['brust'], ruecken: ['ruecken'], schultern: ['sch_seit', 'sch_hint'], arme: ['bizeps', 'trizeps'], beine: ['quads', 'beinbeuger', 'waden'], gesaess: ['gesaess', 'beinbeuger'] };
+const SESSION_CAP = 10; // mehr als ~10 Sätze pro Muskel und Einheit bringen kaum zusätzlichen Reiz
+
+export function volumeTargets(st, week) {
+  const p = st.profile, m = weekMeta(st, 0, 0), [lo, hi] = VOL[p.level], g = GOAL_VOL[p.goal];
+  const damp = lowRecovery(p) || p.goal === 'abbau' ? 0.5 : 1;
+  const ramp = damp * Math.min(week, m.nBuild - 1) / Math.max(1, m.nBuild - 1);
+  const focus = new Set((p.focus || []).flatMap(f => FOCUS_MAP[f] || []));
+  const extra = 2 * (st.program.mods?.volume || 0);
+  const out = {};
+  for (const k of Object.keys(VOL_MUSCLES)) {
+    if (k === 'rumpf') { out[k] = { target: 4, lo: 4, hi: 6 }; continue; }
+    const f = g * (MUSCLE_FACTOR[k] || 1), add = (focus.has(k) ? 3 : 0) + extra;
+    out[k] = { target: (lo + (hi - lo) * ramp) * f + add, lo: lo * f + add, hi: hi * f * (damp < 1 ? 0.85 : 1) + add, focus: focus.has(k) };
+  }
+  return out;
+}
+
+// Zeitmodell in Minuten: Arbeitssatz inkl. Pause, Umbau je Übung, Aufwärmen.
+const SET_MIN = { main: 3.25, acc: 2.6, iso: 1.5 };
+const SETUP_MIN = { main: 4.5, acc: 1.5, iso: 1.5 };
+const GENERAL_WARMUP = 5;
+
+// Verteilt Sätze so, dass jeder Muskel möglichst seinen Zielwert erreicht, ohne die Trainingszeit zu sprengen.
+function allocate(st, sessions, targets) {
+  const p = st.profile, kraft = p.goal === 'kraft';
+  const budget = p.minutes - GENERAL_WARMUP, maxSets = MAX_SETS;
+  const vol = {};
+  const add = (sess, k, n) => {
+    k.sets += n;
+    for (const [m, c] of Object.entries(work(k.ex))) { vol[m] = (vol[m] || 0) + c * n; sess.vol[m] = (sess.vol[m] || 0) + c * n; }
+    sess.used += n * SET_MIN[k.role];
+  };
+  for (const s of sessions) {
+    s.vol = {}; s.used = 0;
+    for (const k of s.slots) { const n = k.sets; k.sets = 0; if (n) { s.used += SETUP_MIN[k.role]; add(s, k, n); } }
+  }
+  for (let guard = 0; guard < 300; guard++) {
+    let best = null;
+    for (const s of sessions) for (const k of s.slots) {
+      // Neue Übungen werden mit drei Sätzen bewertet, damit sich die Umbauzeit fair verteilt.
+      const n = k.sets ? 1 : 2, look = k.sets ? 1 : 3;
+      if (k.sets + n > maxSets[k.role]) continue;
+      const cost = look * SET_MIN[k.role] + (k.sets ? 0 : SETUP_MIN[k.role]);
+      if (s.used + n * SET_MIN[k.role] + (k.sets ? 0 : SETUP_MIN[k.role]) > budget) continue;
+      // Ab dem 4. Satz derselben Übung sinkt der Zusatznutzen (Ermüdung, Monotonie).
+      const fatigue = k.sets >= (k.role === 'main' ? 4 : 3) ? 0.7 : 1;
+      let gain = 0;
+      for (const [m, c] of Object.entries(work(k.ex))) {
+        const t = targets[m]?.target ?? 0, w = (MUSCLE_WEIGHT[m] || 1) * (targets[m]?.focus ? 1.4 : 1) * ((vol[m] || 0) < 0.5 * t ? 1.5 : 1);
+        const amount = c * look, def = t - (vol[m] || 0);
+        const useful = Math.max(0, Math.min(amount, def, SESSION_CAP - (s.vol[m] || 0)));
+        gain += w * useful * fatigue - 0.35 * w * (amount - Math.max(0, Math.min(amount, def))) - 0.02 * (s.vol[m] || 0) * c;
+      }
+      gain += look * (k.role === 'main' ? (kraft ? 0.5 : 0.2) : k.role === 'acc' ? 0.1 : 0);
+      if (gain < 0.5 * look) continue;
+      const score = gain / cost;
+      if (!best || score > best.score) best = { s, k, n, score };
+    }
+    if (!best) break;
+    if (!best.k.sets) best.s.used += SETUP_MIN[best.k.role];
+    add(best.s, best.k, best.n);
+  }
+  return vol;
+}
+
+function buildSessions(st, meso) {
+  const p = st.profile, pr = st.program;
+  return SPLITS[p.days].map(tid => {
+    const [name, slots] = TEMPLATES[tid], used = new Set();
+    return {
+      tid, name,
+      slots: slots.map(([pat, v, role], i) => {
+        const slot = `${tid}:${i}`, ex = resolve(p, pr, pat, v, role, slot, used);
+        used.add(ex.id);
+        return { slot, pat, role, ex, sets: role === 'main' ? MAIN_SETS[p.level] : 0 };
+      }),
+    };
+  });
+}
+
+// Aufwärmsätze für Grundübungen: aufsteigend bis ~80 % der Arbeitslast.
+export function warmups(ex, target, first) {
+  if (!target || ex.noload || ex.bw) return [];
+  const light = target < (ex.per ? 12 : 40);
+  const scheme = light ? (first ? [[0.5, 8], [0.75, 4]] : [[0.7, 4]]) : first ? [[0.4, 8], [0.6, 5], [0.8, 3]] : [[0.6, 5], [0.8, 3]];
+  const min = ex.bar ? 20 : ex.step;
+  const out = [];
+  if (ex.bar && first && target >= 60) out.push({ w: 20, r: 10 });
+  for (const [f, r] of scheme) {
+    const w = Math.max(min, round(target * f, ex.step));
+    if (w < target && !out.some(o => o.w === w)) out.push({ w, r });
+  }
+  return out;
 }
 
 export function weekPlan(st, meso, week) {
+  setCustom(st.custom);
   const p = st.profile, pr = st.program, m = weekMeta(st, meso, week), phase = PHASES[p.goal][meso], R = refs(p);
   const endRir = p.level === 'beg' ? 2 : 1;
   const baseRir = Math.round(3 - (3 - endRir) * Math.min(week, m.nBuild - 1) / (m.nBuild - 1));
-  const daysOut = SPLITS[p.days].map((tid, d) => {
-    const [name, slots] = TEMPLATES[tid], used = new Set();
-    const exercises = slots.slice(0, MAX_EX[p.minutes]).map(([pat, v, role], i) => {
-      const slot = `${tid}:${i}`, ex = resolve(p, pr, pat, v, role, slot, used);
-      used.add(ex.id);
-      const reps = phase[role];
-      const rir = m.deload ? 4 : role === 'iso' && p.level !== 'beg' ? Math.max(0, baseRir - 1) : baseRir;
+  // Die letzte Aufbauwoche nutzt die verfügbare Zeit voll aus und legt die Übungsauswahl fest.
+  // Woche 1 startet bei etwa 75 % dieser Sätze und steigert sich bis dorthin; der Deload halbiert Woche 1.
+  const sessions = buildSessions(st, meso), peak = m.nBuild - 1, peakTargets = volumeTargets(st, peak);
+  const peakVol = allocate(st, sessions, peakTargets);
+  const ratio = 0.75 + 0.25 * Math.min(m.deload ? 0 : week, peak) / Math.max(1, peak);
+  const targets = m.deload ? volumeTargets(st, 0) : volumeTargets(st, Math.min(week, peak));
+  const vol = {};
+  for (const s of sessions) for (const k of s.slots) if (k.sets) {
+    k.sets = Math.max(k.role === 'main' ? Math.min(3, k.sets) : Math.min(2, k.sets), Math.round(k.sets * ratio));
+    if (m.deload) k.sets = Math.max(1, Math.ceil(k.sets / 2));
+    for (const [mu, c] of Object.entries(work(k.ex))) vol[mu] = (vol[mu] || 0) + c * k.sets;
+  }
+  const daysOut = sessions.map((s, d) => {
+    let firstMain = true, iso = 0;
+    const isoCount = s.slots.filter(k => k.sets && k.role === 'iso').length;
+    const exercises = s.slots.filter(k => k.sets).map(k => {
+      const reps = phase[k.role];
+      const rir = m.deload ? 4 : k.role === 'iso' && p.level !== 'beg' ? Math.max(0, baseRir - 1) : baseRir;
+      const target = targetLoad(st, k.ex, reps, rir, R);
+      const warm = k.role === 'main' ? warmups(k.ex, target, firstMain) : [];
+      if (k.role === 'main') firstMain = false;
+      let group = null;
+      if (k.role === 'iso' && isoCount >= 2) {
+        const idx = iso++, pair = Math.floor(idx / 2), last = idx === isoCount - 1 && idx % 2 === 0;
+        if (!last) group = `${String.fromCharCode(65 + pair)}${(idx % 2) + 1}`;
+      }
       return {
-        slot, ex, role, reps, rir,
-        sets: setsFor(p, pr, role, week, m.deload, PATTERN_MUSCLE[pat]),
-        target: targetLoad(st, ex, reps, rir, R),
-        swappable: BY_PAT[pat].filter(c => c.eq.includes(p.equip)).length > 1,
+        slot: k.slot, ex: k.ex, role: k.role, reps, rir, sets: k.sets, target, warm, group,
+        swappable: BY_PAT[k.pat].filter(c => c.eq.includes(p.equip)).length > 1,
       };
     });
-    return { name, key: `${pr.macro}-${meso}-${week}-${d}`, exercises };
+    const minutes = GENERAL_WARMUP + exercises.reduce((a, x) => a + SETUP_MIN[x.role] + x.sets * (x.role === 'iso' && !x.group ? 2 : SET_MIN[x.role]), 0);
+    return { name: s.name, key: `${pr.macro}-${meso}-${week}-${d}`, exercises, minutes: Math.round(minutes / 5) * 5 };
   });
-  return { meta: m, phase, days: daysOut };
+  const volume = Object.fromEntries(Object.entries(peakTargets).map(([k, t]) => [k, { sets: vol[k] || 0, peak: peakVol[k] || 0, lo: t.lo, hi: t.hi, focus: t.focus }]));
+  return { meta: m, phase, days: daysOut, volume };
 }
 
 // Woche abschließen: Zeiger weiterschieben (Woche → Mesozyklus → Makrozyklus).
@@ -244,8 +362,8 @@ export function suggestions(st) {
     } else if ((pr.mods.volume || 0) < 2) {
       out.push({
         id: `vol-${tag}`, kind: 'Training', title: 'Plateau seit zwei Wochen',
-        text: `Kein Fortschritt bei: ${names(sg.stuck)}. Erholung und Ernährung passen – der Reiz reicht nicht mehr. Vorschlag: +1 Satz bei Grund- und Assistenzübungen.`,
-        action: { type: 'volume', delta: 1 }, label: '+1 Satz übernehmen',
+        text: `Kein Fortschritt bei: ${names(sg.stuck)}. Erholung und Ernährung passen – der Reiz reicht nicht mehr. Vorschlag: +2 Sätze pro Muskelgruppe und Woche.`,
+        action: { type: 'volume', delta: 1 }, label: 'Mehr Volumen übernehmen',
       });
     } else {
       out.push({

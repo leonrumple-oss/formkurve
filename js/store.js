@@ -1,11 +1,11 @@
 // Lokaler Speicher. Jede Änderung bekommt einen Zeitstempel, damit die
 // Synchronisierung zwischen Geräten pro Eintrag den neueren Stand wählen kann.
 const KEY = 'formkurve_v1';
-export const SECTIONS = ['profile', 'program', 'nutrition', 'settings'];
+export const SECTIONS = ['profile', 'program', 'nutrition', 'settings', 'custom'];
 
 export function fresh() {
   return {
-    v: 1, profile: null, program: null, logs: {}, body: [], checkins: [], nutrition: null, changes: [], settings: { unit: 'rir' },
+    v: 1, profile: null, program: null, logs: {}, body: [], checkins: [], nutrition: null, changes: [], settings: { unit: 'rir' }, custom: [],
     stamps: {}, deleted: { logs: {}, body: {} },
   };
 }

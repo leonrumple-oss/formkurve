@@ -8,7 +8,7 @@ const KH1 = { step: 2 };
 
 const LIST = [
   // Kniebeuge-Muster
-  e('sq', 'Kniebeuge', 'squat', 'gh', 'squat', 1),
+  e('sq', 'Kniebeuge', 'squat', 'gh', 'squat', 1, { bar: true }),
   e('legpress', 'Beinpresse', 'squat', 'g', 'squat', 1.8, { step: 5 }),
   e('hack', 'Hackenschmidt-Kniebeuge', 'squat', 'g', 'squat', 0.9),
   e('goblet', 'Goblet-Kniebeuge', 'squat', 'hd', 'squat', 0.35, KH1),
@@ -19,9 +19,9 @@ const LIST = [
   e('lunge', 'Ausfallschritte', 'quad', 'ghd', 'squat', 0.18, { ...KH, avoid: ['knie'] }),
   e('stepup', 'Step-ups', 'quad', 'ghd', 'squat', 0.15, KH),
   // Hüftstreckung
-  e('dl', 'Kreuzheben', 'hinge', 'gh', 'deadlift', 1, { avoid: ['ruecken'] }),
-  e('rdl', 'Rumänisches Kreuzheben', 'hinge', 'gh', 'deadlift', 0.7, { avoid: ['ruecken'] }),
-  e('hipthrust', 'Hip Thrust', 'hinge', 'gh', 'deadlift', 0.8),
+  e('dl', 'Kreuzheben', 'hinge', 'gh', 'deadlift', 1, { avoid: ['ruecken'], bar: true }),
+  e('rdl', 'Rumänisches Kreuzheben', 'hinge', 'gh', 'deadlift', 0.7, { avoid: ['ruecken'], bar: true }),
+  e('hipthrust', 'Hip Thrust', 'hinge', 'gh', 'deadlift', 0.8, { bar: true }),
   e('dbrdl', 'KH-Rumänisches Kreuzheben', 'hinge', 'ghd', 'deadlift', 0.27, KH),
   e('dbhip', 'KH-Hip-Thrust', 'hinge', 'd', 'deadlift', 0.3, KH1),
   // Beinbeuger
@@ -29,18 +29,18 @@ const LIST = [
   e('slrdl', 'Einbeiniges KH-Kreuzheben', 'ham', 'ghd', 'deadlift', 0.12, KH),
   e('slidecurl', 'Beinbeuger am Slider/Ball', 'ham', 'hd', null, 0, { noload: true }),
   // Drücken horizontal
-  e('bench', 'Bankdrücken', 'hpush', 'gh', 'bench', 1),
+  e('bench', 'Bankdrücken', 'hpush', 'gh', 'bench', 1, { bar: true }),
   e('dbbench', 'KH-Bankdrücken', 'hpush', 'ghd', 'bench', 0.36, KH),
   e('chestpress', 'Brustpresse', 'hpush', 'g', 'bench', 0.9),
   // Drücken schräg
   e('incdb', 'KH-Schrägbankdrücken', 'ipush', 'ghd', 'bench', 0.32, KH),
-  e('incbb', 'Schrägbankdrücken', 'ipush', 'gh', 'bench', 0.8),
+  e('incbb', 'Schrägbankdrücken', 'ipush', 'gh', 'bench', 0.8, { bar: true }),
   // Drücken vertikal
-  e('ohp', 'Überkopfdrücken', 'vpush', 'gh', 'ohp', 1, { avoid: ['schulter'] }),
+  e('ohp', 'Überkopfdrücken', 'vpush', 'gh', 'ohp', 1, { avoid: ['schulter'], bar: true }),
   e('dbohp', 'KH-Schulterdrücken', 'vpush', 'ghd', 'ohp', 0.38, KH),
   e('mshoulder', 'Schulterpresse (Maschine)', 'vpush', 'g', 'ohp', 0.95),
   // Ziehen horizontal
-  e('row', 'Langhantelrudern', 'hpull', 'gh', 'row', 1, { avoid: ['ruecken'] }),
+  e('row', 'Langhantelrudern', 'hpull', 'gh', 'row', 1, { avoid: ['ruecken'], bar: true }),
   e('dbrow', 'KH-Rudern einarmig', 'hpull', 'ghd', 'row', 0.45, KH),
   e('cablerow', 'Kabelrudern sitzend', 'hpull', 'g', 'row', 0.95),
   e('csrow', 'Brustgestütztes KH-Rudern', 'hpull', 'ghd', 'row', 0.36, KH),
@@ -55,12 +55,12 @@ const LIST = [
   e('cablelat', 'Seitheben am Kabel', 'delt', 'g', 'ohp', 0.1, { per: 'je Seite' }),
   e('facepull', 'Face Pulls', 'rear', 'g', 'row', 0.35),
   e('revfly', 'KH-Reverse-Flys', 'rear', 'ghd', 'row', 0.1, { step: 1, per: 'je Hand' }),
-  e('bbcurl', 'Langhantel-Curls', 'biceps', 'gh', 'row', 0.42),
+  e('bbcurl', 'Langhantel-Curls', 'biceps', 'gh', 'row', 0.42, { bar: true }),
   e('dbcurl', 'KH-Curls', 'biceps', 'ghd', 'row', 0.17, KH),
   e('hammer', 'Hammer-Curls', 'biceps', 'ghd', 'row', 0.19, KH),
   e('pushdown', 'Trizepsdrücken am Kabel', 'triceps', 'g', 'bench', 0.35),
   e('ohtri', 'KH-Trizepsstrecken über Kopf', 'triceps', 'ghd', 'bench', 0.24, KH1),
-  e('skull', 'French Press', 'triceps', 'gh', 'bench', 0.35),
+  e('skull', 'French Press', 'triceps', 'gh', 'bench', 0.35, { bar: true }),
   e('kickback', 'KH-Trizeps-Kickbacks', 'triceps', 'ghd', 'bench', 0.1, { step: 1, per: 'je Hand' }),
   e('calf', 'Wadenheben stehend', 'calves', 'g', 'squat', 0.8, { step: 5 }),
   e('dbcalf', 'Wadenheben einbeinig (KH)', 'calves', 'ghd', 'squat', 0.15, KH1),
@@ -71,6 +71,27 @@ const LIST = [
 
 export const EX = Object.fromEntries(LIST.map(x => [x.id, x]));
 export const BY_PAT = LIST.reduce((m, x) => ((m[x.pat] ||= []).push(x), m), {});
+
+// Wöchentliches Volumen: direkte Sätze zählen 1, indirekte 0,5 (fraktionale Zählung nach Pelland et al. 2024).
+export const VOL_MUSCLES = {
+  brust: 'Brust', ruecken: 'Rücken', sch_vorn: 'Schulter vorn', sch_seit: 'Schulter seitlich', sch_hint: 'Schulter hinten',
+  bizeps: 'Bizeps', trizeps: 'Trizeps', quads: 'Quadrizeps', gesaess: 'Gesäß', beinbeuger: 'Beinbeuger', waden: 'Waden', rumpf: 'Rumpf',
+};
+export const PATTERN_WORK = {
+  squat: { quads: 1, gesaess: 0.5 }, quad: { quads: 1, gesaess: 0.5 },
+  hinge: { gesaess: 1, beinbeuger: 0.5 }, ham: { beinbeuger: 1 },
+  hpush: { brust: 1, trizeps: 0.5, sch_vorn: 0.5 }, ipush: { brust: 1, sch_vorn: 0.5, trizeps: 0.5 }, fly: { brust: 1 },
+  vpush: { sch_vorn: 1, trizeps: 0.5, sch_seit: 0.5 }, delt: { sch_seit: 1 }, rear: { sch_hint: 1 },
+  hpull: { ruecken: 1, bizeps: 0.5, sch_hint: 0.5 }, vpull: { ruecken: 1, bizeps: 0.5 },
+  biceps: { bizeps: 1 }, triceps: { trizeps: 1 }, calves: { waden: 1 }, core: { rumpf: 1 },
+};
+// Abweichungen einzelner Übungen vom Muster
+const WORK_OVERRIDE = {
+  legext: { quads: 1 }, hipthrust: { gesaess: 1 }, dbhip: { gesaess: 1 },
+  rdl: { beinbeuger: 1, gesaess: 0.5 }, dbrdl: { beinbeuger: 1, gesaess: 0.5 }, dl: { gesaess: 1, beinbeuger: 0.5, ruecken: 0.5 },
+  pullover: { ruecken: 1, brust: 0.5 }, cablefly: { brust: 1 },
+};
+export const work = ex => WORK_OVERRIDE[ex.id] || PATTERN_WORK[ex.pat];
 
 export const PATTERN_MUSCLE = {
   squat: 'beine', quad: 'beine', hinge: 'gesaess', ham: 'gesaess',
@@ -84,11 +105,11 @@ export const MUSCLES = { brust: 'Brust', ruecken: 'Rücken', schultern: 'Schulte
 
 // [Muster, Variante, Rolle] – hintere Slots fallen bei kurzer Trainingszeit zuerst weg.
 export const TEMPLATES = {
-  fbA: ['Ganzkörper A', [['squat', 0, 'main'], ['hpush', 0, 'main'], ['hpull', 0, 'main'], ['ham', 0, 'acc'], ['delt', 0, 'iso'], ['biceps', 0, 'iso'], ['core', 0, 'iso']]],
+  fbA: ['Ganzkörper A', [['squat', 0, 'main'], ['hpush', 0, 'main'], ['hpull', 0, 'main'], ['ham', 0, 'acc'], ['delt', 0, 'iso'], ['biceps', 0, 'iso'], ['core', 0, 'iso'], ['rear', 0, 'iso']]],
   fbB: ['Ganzkörper B', [['hinge', 0, 'main'], ['vpush', 0, 'main'], ['vpull', 0, 'main'], ['quad', 0, 'acc'], ['ipush', 0, 'acc'], ['triceps', 0, 'iso'], ['calves', 0, 'iso']]],
   fbC: ['Ganzkörper C', [['squat', 1, 'main'], ['ipush', 0, 'main'], ['hpull', 1, 'main'], ['hinge', 1, 'acc'], ['vpull', 0, 'acc'], ['delt', 0, 'iso'], ['triceps', 0, 'iso']]],
-  upA: ['Oberkörper A', [['hpush', 0, 'main'], ['hpull', 0, 'main'], ['vpush', 1, 'acc'], ['vpull', 0, 'acc'], ['triceps', 0, 'iso'], ['biceps', 0, 'iso'], ['delt', 0, 'iso']]],
-  upB: ['Oberkörper B', [['vpush', 0, 'main'], ['vpull', 0, 'main'], ['ipush', 0, 'acc'], ['hpull', 1, 'acc'], ['delt', 0, 'iso'], ['biceps', 1, 'iso'], ['triceps', 1, 'iso']]],
+  upA: ['Oberkörper A', [['hpush', 0, 'main'], ['hpull', 0, 'main'], ['vpush', 1, 'acc'], ['vpull', 0, 'acc'], ['triceps', 0, 'iso'], ['biceps', 0, 'iso'], ['delt', 0, 'iso'], ['fly', 0, 'iso'], ['rear', 0, 'iso']]],
+  upB: ['Oberkörper B', [['vpush', 0, 'main'], ['vpull', 0, 'main'], ['ipush', 0, 'acc'], ['hpull', 1, 'acc'], ['delt', 0, 'iso'], ['biceps', 1, 'iso'], ['triceps', 1, 'iso'], ['rear', 1, 'iso']]],
   loA: ['Unterkörper A', [['squat', 0, 'main'], ['hinge', 1, 'main'], ['quad', 0, 'acc'], ['ham', 0, 'acc'], ['calves', 0, 'iso'], ['core', 0, 'iso']]],
   loB: ['Unterkörper B', [['hinge', 0, 'main'], ['squat', 1, 'main'], ['ham', 0, 'acc'], ['quad', 1, 'acc'], ['calves', 0, 'iso'], ['core', 1, 'iso']]],
   push: ['Push', [['hpush', 0, 'main'], ['vpush', 0, 'main'], ['ipush', 0, 'acc'], ['delt', 0, 'iso'], ['triceps', 0, 'iso'], ['fly', 0, 'iso'], ['triceps', 1, 'iso']]],
@@ -144,3 +165,20 @@ export const EST = {
   mid: { squat: 1.25, bench: 1.0, deadlift: 1.5, ohp: 0.65, row: 0.9 },
   adv: { squat: 1.75, bench: 1.35, deadlift: 2.1, ohp: 0.85, row: 1.15 },
 };
+
+// ---------- Eigene Übungen ----------
+export const LOAD_TYPES = { kg: 'Gewicht in kg', kgh: 'Kurzhanteln, kg je Hand', bw: 'Körpergewicht (+ Zusatzgewicht)', none: 'Nur Wiederholungen' };
+
+export function setCustom(list = []) {
+  for (const id of Object.keys(EX)) if (EX[id].custom) delete EX[id];
+  for (const p of Object.keys(BY_PAT)) BY_PAT[p] = BY_PAT[p].filter(x => !x.custom);
+  for (const c of list) {
+    if (!BY_PAT[c.pat]) continue;
+    const x = { id: c.id, name: c.name, pat: c.pat, eq: 'ghd', ref: null, ratio: 0, step: c.load === 'kgh' ? 1 : 2.5, custom: true, load: c.load };
+    if (c.load === 'kgh') x.per = 'je Hand';
+    if (c.load === 'bw') x.bw = true;
+    if (c.load === 'none') x.noload = true;
+    EX[c.id] = x;
+    BY_PAT[c.pat].push(x);
+  }
+}
