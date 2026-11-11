@@ -1,10 +1,11 @@
-import { state, save, replace, fresh } from './store.js';
+import { state, save, replace, fresh, touchAll } from './store.js';
+import * as S from './sync.js';
 import * as E from './engine.js';
 import { EX, PHASES, GOALS, LEVELS, EQUIP, LIFTS, MUSCLES, SPLIT_NAME } from './data.js';
 
 const app = document.getElementById('app');
 let view = 'home';
-const ui = { meso: null, week: null, logKey: null, chartEx: null, ob: null, obStep: 0, obErr: '', modal: null, rec: 3, toast: '' };
+const ui = { meso: null, week: null, logKey: null, chartEx: null, ob: null, obStep: 0, obErr: '', modal: null, rec: 3, toast: '', syncErr: '', syncBusy: false, conn: null };
 
 // ---------- Helfer ----------
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -79,6 +80,7 @@ function vOnboarding() {
     <div class="bar"><i style="width:${(ui.obStep + 1) / OB_STEPS.length * 100}%"></i></div>
     <h1>${title}</h1><p class="sub">${sub}</p>
     <div class="ob-body">${body()}</div>
+    ${ui.obStep === 0 && !state.profile ? `<p class="obsync">Schon auf einem anderen Gerät eingerichtet? <button class="link" data-act="syncOpen">Daten über GitHub holen</button></p>` : ''}
     ${ui.obErr ? `<p class="err" role="alert">${ui.obErr}</p>` : ''}
     <div class="ob-nav">
       ${ui.obStep > 0 ? '<button class="btn ghost" data-act="obBack">Zurück</button>' : state.profile ? '<button class="btn ghost" data-act="obCancel">Abbrechen</button>' : '<span></span>'}
@@ -282,14 +284,53 @@ function vProfile() {
   <section class="card"><div class="cardhead"><h3>Anstrengung anzeigen als</h3></div>
     <div class="seg"><button class="${state.settings.unit === 'rir' ? 'on' : ''}" data-act="unit" data-unit="rir">RIR <small>Wiederholungen in Reserve</small></button><button class="${state.settings.unit === 'rpe' ? 'on' : ''}" data-act="unit" data-unit="rpe">RPE <small>Skala 1–10</small></button></div>
     <p class="muted small">RIR 2 entspricht RPE 8: Du hättest noch zwei saubere Wiederholungen geschafft.</p></section>
+  ${syncCard()}
   <section class="card"><div class="cardhead"><h3>Daten</h3></div>
-    <p class="muted small">Alles liegt nur auf diesem Gerät. Mit dem Export sicherst du deine Daten oder überträgst sie auf ein anderes Gerät.</p>
+    <p class="muted small">${S.connected() ? 'Deine Daten liegen auf diesem Gerät und als Kopie in deinem GitHub-Konto.' : 'Alles liegt nur auf diesem Gerät.'} Mit dem Export sicherst du zusätzlich eine Datei, z. B. in iCloud Drive.</p>
     <div class="actions"><button class="btn ghost" data-act="export">Backup exportieren</button><label class="btn ghost">Backup importieren<input type="file" accept="application/json,.json" data-change="import" hidden></label><button class="btn danger" data-act="modalReset">Alles zurücksetzen</button></div></section>
   <p class="muted small center">Formkurve ersetzt keine ärztliche oder therapeutische Beratung. Bei Schmerzen Training anpassen und abklären lassen.</p>`;
 }
 
+// ---------- Synchronisierung ----------
+const timeDE = t => new Date(t).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+function syncCard() {
+  const i = S.info(), st = S.status;
+  if (!i) return `<section class="card"><div class="cardhead"><h3>Synchronisierung</h3><span class="syncdot off">aus</span></div>
+    <p class="muted small">Gleiche Training und Gewicht automatisch zwischen Handy und Rechner ab. Gespeichert wird in einem nicht gelisteten Gist in deinem GitHub-Konto.</p>
+    <div class="actions"><button class="btn primary" data-act="syncOpen">Mit GitHub verbinden</button></div></section>`;
+  const state_ = st.busy ? ['busy', 'gleicht ab …'] : st.error ? [st.offline ? 'wait' : 'err', st.offline ? 'offline' : 'Fehler'] : ['ok', 'aktiv'];
+  return `<section class="card"><div class="cardhead"><h3>Synchronisierung</h3><span class="syncdot ${state_[0]}">${state_[1]}</span></div>
+    <dl class="facts"><div><dt>GitHub-Konto</dt><dd>${esc(i.login)}</dd></div><div><dt>Zuletzt abgeglichen</dt><dd>${i.last ? timeDE(i.last) : 'noch nie'}</dd></div></dl>
+    ${st.error ? `<p class="status ${st.offline ? '' : 'warn'}">${esc(st.error)}</p>` : ''}
+    <p class="muted small">Abgeglichen wird automatisch nach jeder Änderung und beim Öffnen der App.</p>
+    <div class="actions"><button class="btn ghost" data-act="syncNow" ${st.busy ? 'disabled' : ''}>Jetzt abgleichen</button>${st.error && !st.offline ? '<button class="btn ghost" data-act="syncOpen">Neu verbinden</button>' : ''}<button class="btn ghost" data-act="syncOff">Trennen</button></div></section>`;
+}
+
+function syncModal() {
+  if (ui.modal === 'syncChoice') {
+    const r = ui.conn.remote, n = Object.keys(r.logs || {}).length;
+    return `<div class="overlay"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">Welche Daten sollen gelten?</h2>
+      <p class="sub">In deinem GitHub-Konto liegt schon ein Stand${r.profile?.name ? ` von ${esc(r.profile.name)}` : ''} mit ${n} Trainingseinheiten. Auf diesem Gerät sind ebenfalls Daten.</p>
+      <div class="altlist"><button class="chip" data-act="syncChoose" data-mode="remote"><b>Online-Stand übernehmen</b><small>Empfohlen, wenn du bisher auf dem anderen Gerät trainiert hast. Die Daten auf diesem Gerät werden ersetzt.</small></button>
+      <button class="chip" data-act="syncChoose" data-mode="merge"><b>Zusammenführen</b><small>Trainingseinheiten und Gewichtseinträge beider Geräte bleiben erhalten.</small></button></div>
+      <div class="actions end"><button class="btn ghost" data-act="syncCancel">Abbrechen</button></div></div></div>`;
+  }
+  return `<div class="overlay" data-act="modalHide"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">Mit GitHub verbinden</h2>
+    <ol class="steps">
+      <li>Öffne <a href="${S.TOKEN_URL}" target="_blank" rel="noopener">diese GitHub-Seite</a> und melde dich an. Das Häkchen bei „gist“ ist schon gesetzt.</li>
+      <li>Bei „Expiration“ am besten „No expiration“ wählen, dann unten auf „Generate token“ tippen.</li>
+      <li>Den Schlüssel (beginnt mit „ghp_“) kopieren und hier einfügen. Auf jedem Gerät denselben Schlüssel verwenden.</li>
+    </ol>
+    <label class="field"><span>GitHub-Schlüssel</span><div class="inp"><input type="password" id="sync-token" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ghp_…"></div></label>
+    ${ui.syncErr ? `<p class="err" role="alert">${esc(ui.syncErr)}</p>` : ''}
+    <p class="muted small">Der Schlüssel bleibt nur auf diesem Gerät und darf ausschließlich Gists lesen und schreiben. Gib ihn nicht weiter.</p>
+    <div class="actions end"><button class="btn ghost" data-act="modalHide" data-force="1">Abbrechen</button><button class="btn primary" data-act="syncConnect" ${ui.syncBusy ? 'disabled' : ''}>${ui.syncBusy ? 'Verbinde …' : 'Verbinden'}</button></div></div></div>`;
+}
+
 // ---------- Dialoge ----------
 function modal() {
+  if (ui.modal === 'sync' || ui.modal === 'syncChoice') return syncModal();
   if (ui.modal === 'close') {
     const pr = state.program, plan = E.weekPlan(state, pr.meso, pr.week), done = plan.days.filter(d => state.logs[d.key]?.done).length;
     const nextTxt = !plan.meta.deload ? `Woche ${pr.week + 2}` : pr.meso < E.MESOS - 1 ? `Mesozyklus ${pr.meso + 2}` : `Makrozyklus ${pr.macro + 2}`;
@@ -308,7 +349,7 @@ function modal() {
   }
   if (ui.modal === 'reset') {
     return `<div class="overlay" data-act="modalHide"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><h2 id="mt">Alles zurücksetzen?</h2>
-      <p class="sub">Profil, Plan und alle Trainings- und Gewichtseinträge werden von diesem Gerät gelöscht. Das lässt sich nicht rückgängig machen – exportiere vorher ein Backup, wenn du die Daten behalten willst.</p>
+      <p class="sub">Profil, Plan und alle Trainings- und Gewichtseinträge werden von diesem Gerät gelöscht. Das lässt sich nicht rückgängig machen – exportiere vorher ein Backup, wenn du die Daten behalten willst.${S.connected() ? ' Die Synchronisierung wird auf diesem Gerät getrennt; die Kopie in deinem GitHub-Konto bleibt erhalten.' : ''}</p>
       <div class="actions end"><button class="btn ghost" data-act="modalHide" data-force="1">Abbrechen</button><button class="btn danger" data-act="reset">Endgültig löschen</button></div></div></div>`;
   }
   return '';
@@ -320,7 +361,7 @@ const VIEWS = { home: vHome, plan: vPlan, log: vLog, progress: vProgress, food: 
 function render() {
   if (!state.profile || ui.ob) {
     ui.ob ||= structuredClone(OB_DEFAULT);
-    app.innerHTML = vOnboarding();
+    app.innerHTML = vOnboarding() + modal() + (ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : '');
     return;
   }
   const active = view === 'log' ? 'home' : view;
@@ -418,6 +459,25 @@ const actions = {
     window.scrollTo(0, 0);
   },
 
+  syncOpen: () => { ui.modal = 'sync'; ui.syncErr = ''; render(); setTimeout(() => document.getElementById('sync-token')?.focus(), 50); },
+  syncConnect: async () => {
+    const token = document.getElementById('sync-token').value;
+    ui.syncBusy = true; ui.syncErr = ''; render();
+    try {
+      const conn = await S.connect(token);
+      ui.syncBusy = false;
+      if (conn.remote && state.profile && !ui.ob?.age) { ui.conn = conn; ui.modal = 'syncChoice'; render(); return; }
+      await finishSync(conn, conn.remote ? 'remote' : 'local');
+    } catch (e) {
+      ui.syncBusy = false; ui.syncErr = e.message; render();
+      document.getElementById('sync-token').value = token;
+    }
+  },
+  syncChoose: d => finishSync(ui.conn, d.mode),
+  syncCancel: () => { ui.conn = null; ui.modal = null; render(); },
+  syncNow: () => S.syncNow(),
+  syncOff: () => { S.disconnect(); toast('Synchronisierung getrennt. Deine Daten bleiben auf diesem Gerät.'); },
+
   export: () => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
@@ -425,7 +485,7 @@ const actions = {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   },
-  reset: () => { replace(fresh()); ui.modal = null; ui.ob = null; ui.obStep = 0; view = 'home'; render(); },
+  reset: () => { S.disconnect(); replace(fresh()); ui.modal = null; ui.ob = null; ui.obStep = 0; view = 'home'; render(); },
 };
 
 function addWeight(date, weight) {
@@ -467,12 +527,27 @@ document.addEventListener('change', ev => {
     el.files[0].text().then(t => {
       const data = JSON.parse(t);
       if (!data.profile || !data.program || !data.logs) throw new Error();
-      replace(data); view = 'home'; toast('Backup importiert.');
+      replace(data); touchAll(); view = 'home'; toast('Backup importiert.');
     }).catch(() => toast('Die Datei ist kein gültiges Formkurve-Backup.'));
   }
 });
 
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && ui.modal) { ui.modal = null; render(); } });
 
+async function finishSync(conn, mode) {
+  ui.conn = null; ui.modal = null;
+  await S.activate(conn, mode);
+  if (state.profile) { ui.ob = null; ui.obStep = 0; }
+  view = 'home';
+  toast(S.status.error ? S.status.error : conn.remote ? `Verbunden – Daten von ${conn.login} geladen.` : 'Verbunden – deine Daten werden ab jetzt abgeglichen.');
+  window.scrollTo(0, 0);
+}
+
+// Änderungen von anderen Geräten anzeigen, ohne laufende Eingaben zu stören.
+const typing = () => { const a = document.activeElement; return a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName); };
+S.onRemoteChange(() => { if (!typing() && !ui.modal && !ui.ob) render(); });
+S.onStatus(() => { if (view === 'profile' && state.profile && !ui.ob && !ui.modal && !typing()) render(); });
+
 render();
+S.start();
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});

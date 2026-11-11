@@ -269,3 +269,17 @@ select { background: var(--raised); border: 1px solid var(--line); border-radius
 .altlist .chip { width: 100%; }
 .exfoot { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .exfoot .link.muted { color: var(--muted); }
+
+/* Synchronisierung */
+.syncdot { font-size: 12px; font-weight: 650; padding: 4px 10px; border-radius: 99px; background: var(--raised); color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.syncdot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.syncdot.ok { background: var(--tint); color: var(--ink); }
+.syncdot.busy { background: var(--deload-tint); color: var(--deload); }
+.syncdot.err { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.syncdot.wait { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.card .facts + .status, .card .facts + .muted { margin-top: 14px; }
+.card .facts ~ .actions { margin-top: 12px; }
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; color: var(--muted); font-size: 14px; }
+.steps a { color: var(--ink); font-weight: 600; }
+.obsync { margin-top: 26px; font-size: 14px; color: var(--muted); }
+.btn:disabled { opacity: .55; cursor: default; }

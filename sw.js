@@ -1,6 +1,6 @@
 // Netzwerk zuerst, Cache als Offline-Reserve – so kommen Updates sofort an.
-const CACHE = 'formkurve-v1';
-const SHELL = ['./', 'index.html', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'js/app.js', 'js/engine.js', 'js/data.js', 'js/store.js'];
+const CACHE = 'formkurve-v2';
+const SHELL = ['./', 'index.html', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'js/app.js', 'js/engine.js', 'js/data.js', 'js/store.js', 'js/sync.js'];
 
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(
